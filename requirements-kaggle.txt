@@ -1,0 +1,5 @@
+# Kaggle already has torch, torchvision, torchaudio pre-installed with the correct CUDA runtime.
+# It also has pandas, numpy, scikit-learn.
+# We only need the following utilities:
+tqdm
+matplotlib

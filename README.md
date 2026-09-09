@@ -14,6 +14,7 @@ SmartCast is a **production-grade, Python-based live-streaming platform** inspir
 | **Real-Time Chat** | WebSocket chat with emojis, Redis pub/sub fan-out & PostgreSQL persistence |
 | **VOD Workflow** | Automatic recording, thumbnail generation & VOD listing once a stream ends |
 | **Auth** | JWT tokens, OAuth2 flow, streamer / viewer / admin role-based access |
+| **Recommendations** | **NEW!** Self-attentive sequential recommender (`LiveRec`) with dynamic item availability & repeat consumption tracking. See [`KAGGLE_SETUP.md`](KAGGLE_SETUP.md) for Kaggle multi-GPU training instructions. |
 | **Observability** | Prometheus metrics + pre-built Grafana dashboards |
 | **One-Command Run** | `docker-compose up` boots the entire micro-service stack |
 
@@ -55,6 +56,7 @@ SmartCast is a **production-grade, Python-based live-streaming platform** inspir
 * **Python** 3.11 • FastAPI • Streamlit
 * **Video**: FFmpeg • nginx-rtmp • HLS.js
 * **Data**: PostgreSQL • SQLAlchemy • Alembic
+* **Machine Learning**: PyTorch • Scikit-learn • Pandas (LiveRec Recommender)
 * **Realtime / Cache**: Redis (pub/sub)
 * **Messaging**: WebSockets (Starlette)
 * **Infra**: Docker • docker-compose • Nginx
