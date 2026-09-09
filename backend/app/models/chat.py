@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Text, ForeignKey, JSON, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -43,7 +43,7 @@ class ChatMessage(Base):
     # Message metadata
     is_deleted = Column(Boolean, default=False)
     is_highlighted = Column(Boolean, default=False)
-    metadata = Column(JSON, nullable=True)  # for reactions, mentions, etc.
+    msg_metadata = Column("metadata", JSON, nullable=True)  # for reactions, mentions, etc.
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
