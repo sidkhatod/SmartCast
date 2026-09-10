@@ -360,6 +360,10 @@ def train_and_evaluate(variant_name, use_repeat, use_availability, args, all_los
                 
                 scores, top_ids, _ = model(item_seq, available, hours_since)
                 
+                # Mask out padded positions (item ID 0) from being considered valid candidates
+                pad_mask = (top_ids == 0)
+                scores = scores.masked_fill(pad_mask, -float('inf'))
+                
                 h1 = hit_at_k(scores, top_ids, target_tensor, k=1).sum().item()
                 h10 = hit_at_k(scores, top_ids, target_tensor, k=10).sum().item()
                 n10 = ndcg_at_k(scores, top_ids, target_tensor, k=10).sum().item()
