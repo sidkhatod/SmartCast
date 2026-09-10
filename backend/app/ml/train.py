@@ -117,6 +117,77 @@ def collate_fn(batch):
         'hours_since': torch.stack(batch_hours)
     }
 
+class EvalDataset(Dataset):
+    def __init__(self, test_samples, availability, max_len=50):
+        self.samples = test_samples
+        self.availability = availability
+        self.max_len = max_len
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        u, history, target_item, target_time = self.samples[idx]
+        
+        item_seq = [item for item, t in history]
+        if len(item_seq) >= self.max_len:
+            item_seq = item_seq[-self.max_len:]
+        else:
+            item_seq = [0] * (self.max_len - len(item_seq)) + item_seq
+            
+        available = list(self.availability.get(target_time, []))
+        if target_item not in available:
+            available.append(target_item)
+
+        max_cands = 256
+        if len(available) > max_cands:
+            available = list(np.random.choice(available, max_cands, replace=False))
+            if target_item not in available:
+                available[0] = target_item
+
+        hours_since = []
+        history_dict = {item: t for item, t in history}
+        for item in available:
+            if item in history_dict:
+                hours = (target_time - history_dict[item]) / 6.0
+                hours_since.append(hours)
+            else:
+                hours_since.append(-1.0)
+                
+        return {
+            'item_seq': torch.tensor(item_seq, dtype=torch.long),
+            'target_item': torch.tensor(target_item, dtype=torch.long),
+            'available': torch.tensor(available, dtype=torch.long),
+            'hours_since': torch.tensor(hours_since, dtype=torch.float),
+            'target_time': torch.tensor(target_time, dtype=torch.long)
+        }
+
+def collate_eval_fn(batch):
+    item_seq = torch.stack([x['item_seq'] for x in batch])
+    target_item = torch.stack([x['target_item'] for x in batch])
+    
+    max_avail = max([len(x['available']) for x in batch])
+    
+    batch_available = []
+    batch_hours = []
+    
+    for x in batch:
+        avail = x['available']
+        hours = x['hours_since']
+        pad_len = max_avail - len(avail)
+        if pad_len > 0:
+            avail = torch.cat([avail, torch.zeros(pad_len, dtype=torch.long)])
+            hours = torch.cat([hours, torch.full((pad_len,), -1.0, dtype=torch.float)])
+        batch_available.append(avail)
+        batch_hours.append(hours)
+        
+    return {
+        'item_seq': item_seq,
+        'target_item': target_item,
+        'available': torch.stack(batch_available),
+        'hours_since': torch.stack(batch_hours)
+    }
+
 def update_loss_curves(all_losses, ckpt_dir):
     try:
         import matplotlib.pyplot as plt
@@ -183,9 +254,46 @@ def train_and_evaluate(variant_name, use_repeat, use_availability, args, all_los
     
     all_losses[variant_name] = []
     
+    start_epoch = 0
+    variant_safe_name = variant_name.replace(' ', '_').replace('+', 'plus').replace('(', '').replace(')', '').replace(',', '')
+    
+    # Check for existing checkpoint
+    import glob
+    ckpt_pattern = str(ckpt_dir / f"{variant_safe_name}_epoch*.pt")
+    ckpt_files = glob.glob(ckpt_pattern)
+    if ckpt_files:
+        epochs = []
+        for f in ckpt_files:
+            try:
+                ep = int(f.split('_epoch')[-1].split('.pt')[0])
+                epochs.append((ep, f))
+            except:
+                pass
+        if epochs:
+            epochs.sort(key=lambda x: x[0])
+            latest_ep, latest_file = epochs[-1]
+            print(f"Resuming from checkpoint: {latest_file} at Epoch {latest_ep}")
+            
+            checkpoint = torch.load(latest_file, map_location=device)
+            if isinstance(model, nn.DataParallel):
+                model.module.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = latest_ep
+            
+            # Load previous losses if they exist to keep the graph continuous
+            if 'loss' in checkpoint:
+                # We can't recover the full history easily from just the last checkpoint 
+                # unless we load all, but for now we just start tracking new ones.
+                pass
+    
     final_h1, final_h10, final_ndcg10 = 0.0, 0.0, 0.0
     
-    for epoch in range(args.epochs):
+    test_dataset = EvalDataset(test_samples, availability)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size * 2, shuffle=False, collate_fn=collate_eval_fn, num_workers=0)
+    
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         total_loss = 0
         progress = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}")
@@ -240,51 +348,32 @@ def train_and_evaluate(variant_name, use_repeat, use_availability, args, all_los
         hit1, hit10, ndcg10 = 0.0, 0.0, 0.0
         count = 0
         
+        eval_log_path = ckpt_dir / "eval_timing.txt"
+        eval_start_time = __import__('time').time()
+        
         with torch.no_grad():
-            for u, history, target_item, target_time in tqdm(test_samples, desc=f"Evaluating Epoch {epoch+1}"):
-                item_seq = [item for item, t in history]
-                if len(item_seq) >= 50:
-                    item_seq = item_seq[-50:]
-                else:
-                    item_seq = [0] * (50 - len(item_seq)) + item_seq
-                    
-                item_seq = torch.tensor([item_seq], dtype=torch.long).to(device)
-                
-                available = list(availability.get(target_time, []))
-                if target_item not in available:
-                    available.append(target_item)
-                    
-                max_cands = 256
-                if len(available) > max_cands:
-                    available = list(np.random.choice(available, max_cands, replace=False))
-                    if target_item not in available:
-                        available[0] = target_item
-                        
-                hours_since = []
-                history_dict = {item: t for item, t in history}
-                for item in available:
-                    if item in history_dict:
-                        hours = (target_time - history_dict[item]) / 6.0
-                        hours_since.append(hours)
-                    else:
-                        hours_since.append(-1.0)
-                        
-                available = torch.tensor([available], dtype=torch.long).to(device)
-                hours_since = torch.tensor([hours_since], dtype=torch.float).to(device) if use_repeat else None
-                
-                target_tensor = torch.tensor([target_item], dtype=torch.long).to(device)
+            for batch_idx, batch in enumerate(tqdm(test_loader, desc=f"Evaluating Epoch {epoch+1}", mininterval=5.0)):
+                item_seq = batch['item_seq'].to(device)
+                available = batch['available'].to(device)
+                hours_since = batch['hours_since'].to(device) if use_repeat else None
+                target_tensor = batch['target_item'].to(device)
                 
                 scores, top_ids, _ = model(item_seq, available, hours_since)
                 
-                h1 = hit_at_k(scores, top_ids, target_tensor, k=1).item()
-                h10 = hit_at_k(scores, top_ids, target_tensor, k=10).item()
-                n10 = ndcg_at_k(scores, top_ids, target_tensor, k=10).item()
+                h1 = hit_at_k(scores, top_ids, target_tensor, k=1).sum().item()
+                h10 = hit_at_k(scores, top_ids, target_tensor, k=10).sum().item()
+                n10 = ndcg_at_k(scores, top_ids, target_tensor, k=10).sum().item()
                 
                 hit1 += h1
                 hit10 += h10
                 ndcg10 += n10
-                count += 1
+                count += len(item_seq)
                 
+                if (batch_idx + 1) % (5000 // (args.batch_size * 2)) == 0:
+                    elapsed = __import__('time').time() - eval_start_time
+                    with open(eval_log_path, "a") as f_log:
+                        f_log.write(f"Epoch {epoch+1} - Processed {count}/{len(test_samples)} eval examples. Elapsed: {elapsed:.2f}s\n")
+                        
         final_h1 = hit1/count
         final_h10 = hit10/count
         final_ndcg10 = ndcg10/count

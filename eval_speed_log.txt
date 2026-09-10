@@ -1,0 +1,10 @@
+Processed 5000 samples. Elapsed: 28.69s. Sys Mem: 1089.21 MB. GPU Mem: 0.00 MB
+Processed 10000 samples. Elapsed: 57.68s. Sys Mem: 1089.15 MB. GPU Mem: 0.00 MB
+Processed 15000 samples. Elapsed: 83.71s. Sys Mem: 1089.15 MB. GPU Mem: 0.00 MB
+Processed 20000 samples. Elapsed: 112.48s. Sys Mem: 1089.16 MB. GPU Mem: 0.00 MB
+Processed 25000 samples. Elapsed: 141.66s. Sys Mem: 1089.12 MB. GPU Mem: 0.00 MB
+Processed 30000 samples. Elapsed: 169.23s. Sys Mem: 1089.12 MB. GPU Mem: 0.00 MB
+Processed 35000 samples. Elapsed: 195.02s. Sys Mem: 1089.12 MB. GPU Mem: 0.00 MB
+Processed 40000 samples. Elapsed: 220.37s. Sys Mem: 1089.12 MB. GPU Mem: 0.00 MB
+Processed 45000 samples. Elapsed: 248.25s. Sys Mem: 1089.12 MB. GPU Mem: 0.00 MB
+Processed 50000 samples. Elapsed: 275.55s. Sys Mem: 1089.12 MB. GPU Mem: 0.00 MB
